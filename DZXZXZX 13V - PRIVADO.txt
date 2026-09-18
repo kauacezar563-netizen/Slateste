@@ -1,71 +1,58 @@
--- Compat Delta / todos executors
-local function _now()
-    local ok, t = pcall(function() return os.clock() end)
-    if ok and type(t) == "number" then return t end
-    ok, t = pcall(function() return tick() end)
-    if ok and type(t) == "number" then return t end
-    return 0
+-- Polyfill task (Delta) - resto do script igual v13
+if type(task) ~= "table" then
+    task = {}
 end
-
-local function _wait(n)
-    n = tonumber(n) or 0
-    local ok, rs = pcall(function() return game:GetService("RunService") end)
-    if not ok or not rs then
-        local t0 = _now()
-        while (_now() - t0) < math.max(n, 0.03) do end
-        return
-    end
-    if n <= 0 then
-        rs.Heartbeat:Wait()
-        return
-    end
-    local t0 = _now()
-    while (_now() - t0) < n do
-        rs.Heartbeat:Wait()
+if type(task.wait) ~= "function" then
+    task.wait = function(n)
+        n = tonumber(n) or 0
+        local rs = game:GetService("RunService")
+        if n <= 0 then
+            rs.Heartbeat:Wait()
+            return
+        end
+        local t0 = tick()
+        while tick() - t0 < n do
+            rs.Heartbeat:Wait()
+        end
     end
 end
-
-local function _spawn(fn)
-    if type(fn) ~= "function" then return end
-    local co = coroutine.create(fn)
-    local ok, err = coroutine.resume(co)
-    if not ok then
-        warn("[dzxzxzx] spawn error:", err)
+if type(task.delay) ~= "function" then
+    task.delay = function(n, fn)
+        task.spawn(function()
+            task.wait(n)
+            if type(fn) == "function" then fn() end
+        end)
     end
 end
-
-local function _delay(n, fn)
-    _spawn(function()
-        _wait(n)
+if type(task.spawn) ~= "function" then
+    task.spawn = function(fn)
         if type(fn) == "function" then
-            fn()
-        end
-    end)
-end
-
-local function _defer(fn)
-    _spawn(fn)
-end
-
-pcall(function()
-    if game and game.IsLoaded and type(game.IsLoaded) == "function" and not game:IsLoaded() then
-        if game.Loaded then
-            game.Loaded:Wait()
+            coroutine.resume(coroutine.create(fn))
         end
     end
-end)
-print("[dzxzxzx] Iniciando script...")
+end
+if type(task.defer) ~= "function" then
+    task.defer = function(fn)
+        task.spawn(fn)
+    end
+end
+
+-- ============================================
+--  dzxzxzx HUB v13.1 - SERVIDOR PRIVADO
+--  ★ Curva natural e disfarçada
+--  ★ Auto-desliga ao chegar na coordenada
+--  ★ Auto Follow funcional (tecla G + botão)
+--  ★ Todos botões flutuantes arrastáveis
+--  ★ Compatível Mobile + PC
+--  ★ Interface com scroll
+-- ============================================
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-
 local LocalPlayer = Players.LocalPlayer
-while not LocalPlayer do _wait(0.5) LocalPlayer = Players.LocalPlayer end
-
--- Definido cedo (evita nil em hooks de tool / CharacterAdded)
-local connections = {}
+while not LocalPlayer do task.wait(0.5) LocalPlayer = Players.LocalPlayer end
 
 local Character, Humanoid, RootPart
 local function UpdateCharacter(char)
@@ -94,21 +81,21 @@ local freioPosGol         = 0.90
 local ATRITO_GOAL         = 60
 local TEMPO_PARA_DESLIGAR = 16
 
--- Controles ajustaveis na UI (valores iniciais bons)
-local FORCA_CURVA         = 0.70   -- multiplica a correcao (0.3 a 1.2)
-local DIST_INICIO_CURVA   = 40     -- a partir de quantos studs a correcao fica mais forte
+-- Controles ajustáveis na UI (valores iniciais bons)
+local FORCA_CURVA         = 0.70   -- multiplica a correção (0.3 a 1.2)
+local DIST_INICIO_CURVA   = 40     -- a partir de quantos studs a correção fica mais forte
 local FollowStopDistance  = 1.8
 
--- Velocidade legitima (chute / passe)
-local VEL_MULT_CHUTE      = 1.00   -- 0.70 a 1.20 - multiplica a vel real do chute
+-- Velocidade legitima (chute / passe) - funcoes da v14
+local VEL_MULT_CHUTE      = 1.00
 local VEL_MULT_PASSE      = 1.00
-local VEL_MAX_LEGIT       = 95     -- teto pra nao parecer script
+local VEL_MAX_LEGIT       = 95
 local velChuteCapturada   = 0
 local velPasseCapturada   = 0
 
--- Anti-Lag
+-- Anti-Lag (v14)
 local AntiLagEnabled      = true
-local AntiLagMode         = "balanced" -- quality | balanced | performance
+local AntiLagMode         = "balanced"
 local antiLagCounter      = 0
 local antiLagSkip         = 2
 local lastBallSearch      = 0
@@ -133,11 +120,11 @@ local registeredBallNames = {
     Football = true, SoccerBall = true, ["Soccer Ball"] = true
 }
 
--- ESP Ball (sem botao flutuante)
+-- ESP Ball (sem botão flutuante)
 local EspBallEnabled = true
 local espBalls = {}
 
--- Prediction Beam (trajetoria da bola)
+-- Prediction Beam (trajetória da bola)
 local PredictionEnabled = true
 local predFolder = nil
 local predBeams = {}
@@ -169,7 +156,7 @@ local function HookPassTools(char)
             if not PassEnabled then return end
             PassToolTriggered = true
             -- janela curta para pegar a velocidade do passe
-            _delay(1.2, function()
+            task.delay(1.2, function()
                 PassToolTriggered = false
             end)
         end))
@@ -183,15 +170,15 @@ local function HookPassTools(char)
     end
 end
 
-_defer(function()
+task.defer(function()
     if LocalPlayer.Character then HookPassTools(LocalPlayer.Character) end
 end)
 LocalPlayer.CharacterAdded:Connect(function(char)
-    _wait(0.3)
+    task.wait(0.3)
     HookPassTools(char)
 end)
 
--- Visibilidade dos botoes flutuantes
+-- Visibilidade dos botões flutuantes
 local floatButtonsVisible = {
     master = true,
     sistema = true,
@@ -209,8 +196,8 @@ local stealthSaved = {
     espEnabled = true,
     reachVis = true
 }
-local STEALTH_KEY = Enum.KeyCode.RightControl -- tecla rapida
-local FOLLOW_KEY  = Enum.KeyCode.G            -- Auto Follow (customizavel)
+local STEALTH_KEY = Enum.KeyCode.RightControl -- tecla rápida
+local FOLLOW_KEY  = Enum.KeyCode.G            -- Auto Follow (customizável)
 local waitingKeybind = nil -- "follow" | "stealth" | nil
 local btnKeyFollow, btnKeyStealth, lblStealth -- preenchidos na UI
 
@@ -220,9 +207,10 @@ local function KeyName(key)
     return s:gsub("Enum.KeyCode.", "")
 end
 
--- connections ja definido no topo
+-- Conexões para poder desligar o script depois
+local connections = {}
 
--- Toast temporario ate a UI carregar
+-- Toast temporário até a UI carregar
 local Notify = function(msg)
     print("[dzxzxzx] " .. tostring(msg))
 end
@@ -266,7 +254,7 @@ local function CarregarCoordenadas()
 end
 coordenadas = CarregarCoordenadas()
 
--- Troca rapida esquerdo SWAP direito (e variacoes)
+-- Troca rapida esquerdo/direito (v14)
 local function NomeParAlternativo(nome)
     if not nome then return nil end
     local n = nome
@@ -275,7 +263,6 @@ local function NomeParAlternativo(nome)
         {"esquerda", "direita"}, {"Esquerda", "Direita"},
         {"left", "right"}, {"Left", "Right"}, {"LEFT", "RIGHT"},
         {"esq", "dir"}, {"Esq", "Dir"}, {"ESQ", "DIR"},
-        {" ang e", " ang d"}, {" angulo e", " angulo d"},
     }
     for _, p in ipairs(pairList) do
         if n:find(p[1], 1, true) then
@@ -304,7 +291,6 @@ local function TrocarAnguloCoordenada()
         Notify("Trocou -> " .. alt, "ok")
         return
     end
-    -- Fallback: cycle nomes com mesmo prefixo (tudo antes do ultimo espaco)
     local prefix = atual:match("^(.*) ") or atual
     local lista = {}
     for nome, _ in pairs(coordenadas) do
@@ -331,7 +317,7 @@ local function TrocarAnguloCoordenada()
     Notify("Trocou -> " .. nextName, "ok")
 end
 
--- ================= BUSCA BOLA (PUBLICO) =================
+-- ================= BUSCA BOLA (PÚBLICO) =================
 local function getBallPart(obj)
     if not obj then return nil end
     if obj:IsA("BasePart") or obj:IsA("UnionOperation") then return obj end
@@ -346,7 +332,7 @@ local function getBallPart(obj)
 end
 
 local function BuscarBola()
-    -- Versao PRIVADO: busca direta na raiz
+    -- Versão PRIVADO: busca direta na raiz
     local direto = workspace:FindFirstChild("TPS")
     if direto and direto.Parent == workspace then
         return getBallPart(direto)
@@ -354,7 +340,7 @@ local function BuscarBola()
     return nil
 end
 
--- ================= FISICA NATURAL (Ball Pro Goal v9.4 style) =================
+-- ================= FÍSICA NATURAL (Ball Pro Goal v9.4 style) =================
 local cooldownToque = 0
 
 local function CalcularDesvio(bola, dirAtual)
@@ -416,7 +402,7 @@ local function GuiarBola(bola, posGoal, dt)
     local vel = bola.AssemblyLinearVelocity
     local mag = Vector3.new(vel.X, 0, vel.Z).Magnitude
 
-    -- Detectar chute e capturar velocidade real
+    -- Detectar chute + velocidade legitima (v14)
     if not estadoSistema.guiaAtivo and not estadoSistema.cruzou and mag >= VEL_CHUTE_MIN then
         estadoSistema.guiaAtivo = true
         estadoSistema.contandoParada = 0
@@ -428,7 +414,7 @@ local function GuiarBola(bola, posGoal, dt)
     local distGoal = Vector3.new(posGoal.X - bola.Position.X, 0, posGoal.Z - bola.Position.Z)
     local dist = distGoal.Magnitude
 
-    -- Depois de cruzar / dentro do raio - freia e auto-desliga
+    -- Depois de cruzar / dentro do raio → freia e auto-desliga
     if estadoSistema.cruzou or dist <= raioGoal then
         estadoSistema.cruzou = true
         local novoVel = bola.AssemblyLinearVelocity * freioPosGol
@@ -441,7 +427,7 @@ local function GuiarBola(bola, posGoal, dt)
                 estadoSistema.cruzou = false
                 estadoSistema.contandoParada = 0
                 estadoSistema.ativo = false
-                Notify("Alvo alcancado - sistema desligado", "ok")
+                Notify("Alvo alcançado — sistema desligado", "ok")
             end
             return
         end
@@ -471,22 +457,20 @@ local function GuiarBola(bola, posGoal, dt)
         return
     end
 
-    -- Protecao: nunca deixar passar do alvo
+    -- Proteção: nunca deixar passar do alvo
     local vaiPassar = dist < zonaGoal and velHoriz.Magnitude > 1 and velHoriz.Unit:Dot(distGoal.Unit) > 0.6
 
-    -- Velocidade legitima: parte da vel capturada do chute, decai com atrito e distancia
+    -- Velocidade legitima (v14) + atrito natural
     local alvoVel = velChuteCapturada > 0 and velChuteCapturada or VEL_MINIMA
-    -- Perto do gol reduz um pouco (parece freio natural)
     if dist < 30 then
         alvoVel = alvoVel * (0.82 + 0.18 * math.clamp(dist / 30, 0, 1))
     end
     local novaMag = math.max(mag - ATRITO * dt, math.min(alvoVel, VEL_MAX_LEGIT))
-    -- Suaviza: nao estoura acima da vel capturada
     if velChuteCapturada > 0 then
         novaMag = math.min(novaMag, velChuteCapturada * 1.05)
     end
 
-    -- Direcao atual
+    -- Direção atual
     local dirAtual = velHoriz
     if dirAtual.Magnitude < 1 then
         dirAtual = distGoal.Unit
@@ -499,8 +483,10 @@ local function GuiarBola(bola, posGoal, dt)
         local alinhamento = dirAtual:Dot(distGoal.Unit)
         local desalinhado = 1 - math.max(alinhamento, -1)
 
+        -- FORCA_CURVA multiplica a correção (controle da UI)
         local fator = (CORRECAO_ALINHADO + desalinhado * CORRECAO_DESALINHADO) * FORCA_CURVA
 
+        -- DIST_INICIO_CURVA: quanto mais perto dessa distância, mais forte a correção
         if dist < DIST_INICIO_CURVA then
             local t = math.clamp(1 - (dist / DIST_INICIO_CURVA), 0, 1)
             fator = fator * (0.7 + t * 0.6)
@@ -518,19 +504,20 @@ local function GuiarBola(bola, posGoal, dt)
         end
     end
 
+    -- Desvio de players DEPOIS da correção (gera curva em S natural)
     dirFinal = CalcularDesvio(bola, dirFinal)
 
     local velY = bola.AssemblyLinearVelocity.Y
     bola.AssemblyLinearVelocity = Vector3.new(dirFinal.X * novaMag, velY, dirFinal.Z * novaMag)
     bola.AssemblyAngularVelocity = Vector3.zero
 
-    if _now() - cooldownToque > 0.15 then
-        cooldownToque = _now()
+    if os.clock() - cooldownToque > 0.15 then
+        cooldownToque = os.clock()
         TocarBola(bola)
     end
 end
 
--- ================= AUTO FOLLOW (logica do DIO BRANDO) =================
+-- ================= AUTO FOLLOW (lógica do DIO BRANDO) =================
 local function IsManualInputActive()
     return UserInputService:IsKeyDown(Enum.KeyCode.W)
         or UserInputService:IsKeyDown(Enum.KeyCode.A)
@@ -538,57 +525,23 @@ local function IsManualInputActive()
         or UserInputService:IsKeyDown(Enum.KeyCode.D)
 end
 
--- Detector de bola para o Follow (prioriza bola real do jogo, evita falso no meio-campo)
+-- Detector de bola para o Follow (mais confiável - pega a mais próxima)
 local function GetValidBallForFollow()
     if not RootPart then return nil end
+    local closestBall = nil
+    local shortestDist = math.huge
 
-    -- 1) Mesma logica do chute (mais confiavel)
-    local main = BuscarBola()
-    if main and main.Parent and main:IsA("BasePart") then
-        local d = (main.Position - RootPart.Position).Magnitude
-        if d < 200 then
-            return main
-        end
-    end
-
-    -- 2) ballsTable (TPS e nomes registrados)
-    local best, bestScore = nil, -math.huge
-    for ball, _ in pairs(ballsTable) do
-        if ball and ball.Parent and ball:IsA("BasePart") then
-            local pos = ball.Position
-            -- Ignora lixo no centro do mapa / sob o chao
-            if pos.Y > -5 and (math.abs(pos.X) > 2 or math.abs(pos.Z) > 2 or pos.Y > 1) then
-                local dist = (pos - RootPart.Position).Magnitude
-                if dist < 180 then
-                    local score = -dist
-                    -- Prefere bola se movendo
-                    local spd = ball.AssemblyLinearVelocity.Magnitude
-                    if spd > 2 then score = score + 40 end
-                    -- Prefere nao ancorada
-                    if not ball.Anchored then score = score + 25 end
-                    -- Prefere TPS
-                    if ball.Name == "TPS" then score = score + 15 end
-                    if score > bestScore then
-                        bestScore = score
-                        best = ball
-                    end
-                end
-            end
-        end
-    end
-    if best then return best end
-
-    -- 3) Fallback estrito (so nomes exatos, sem find("ball") generico)
-    local closestBall, shortestDist = nil, math.huge
-    local exactNames = { tps = true, ball = true, soccerball = true, football = true, bola = true }
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and exactNames[obj.Name:lower()] then
-            local size = obj.Size
-            if size.X >= 0.8 and size.X <= 6.0 and obj.Position.Y > -5 then
-                local dist = (obj.Position - RootPart.Position).Magnitude
-                if dist < shortestDist and dist < 180 then
-                    shortestDist = dist
-                    closestBall = obj
+        if obj:IsA("BasePart") then
+            local nameLower = obj.Name:lower()
+            if nameLower == "tps" or nameLower == "ball" or nameLower:find("ball") or nameLower:find("soccer") then
+                local size = obj.Size
+                if size.X >= 0.8 and size.X <= 6.0 then
+                    local dist = (obj.Position - RootPart.Position).Magnitude
+                    if dist < shortestDist then
+                        shortestDist = dist
+                        closestBall = obj
+                    end
                 end
             end
         end
@@ -599,27 +552,18 @@ end
 local function DoAutoFollow(ball)
     if not AutoFollowEnabled or IsManualInputActive() or not ball then return end
     if not RootPart or not RootPart.Parent or not Humanoid or not Humanoid.Parent then return end
-    if not ball.Parent then return end
 
     local targetPos = ball.Position
-    -- Protecao: nao segue posicao invalida / centro fantasma
-    if targetPos.Magnitude < 1 and ball.AssemblyLinearVelocity.Magnitude < 0.5 then
-        return
-    end
-
     local delta = targetPos - RootPart.Position
     local moveDirection = Vector3.new(delta.X, 0, delta.Z)
     local mag = moveDirection.Magnitude
 
-    if mag > FollowStopDistance and mag < 160 then
+    if mag > FollowStopDistance and mag < 150 then
         Humanoid:Move(moveDirection.Unit, false)
-        -- So gira se estiver longe o bastante (evita jitter no meio)
-        if mag > 3 then
-            local look = Vector3.new(targetPos.X, RootPart.Position.Y, targetPos.Z)
-            if (look - RootPart.Position).Magnitude > 0.15 then
-                RootPart.CFrame = CFrame.new(RootPart.Position, look)
-            end
-        end
+        RootPart.CFrame = CFrame.new(
+            RootPart.Position,
+            Vector3.new(targetPos.X, RootPart.Position.Y, targetPos.Z)
+        )
     else
         Humanoid:Move(Vector3.zero, false)
     end
@@ -725,13 +669,13 @@ local function DoReach()
 
     for ballPart, _ in pairs(ballsTable) do
         if ballPart and ballPart.Parent then
-            -- Usa a distancia do RootPart (centro do circulo)
+            -- Usa a distância do RootPart (centro do círculo)
             local dx = RootPart.Position.X - ballPart.Position.X
             local dy = RootPart.Position.Y - ballPart.Position.Y
             local dz = RootPart.Position.Z - ballPart.Position.Z
 
             if (dx*dx + dy*dy + dz*dz) <= maxDistSq then
-                -- Bola DENTRO do circulo - toca com todas as partes
+                -- Bola DENTRO do círculo → toca com todas as partes
                 for _, bodyPart in ipairs(bodyParts) do
                     pcall(function()
                         firetouchinterest(bodyPart, ballPart, 0)
@@ -864,7 +808,7 @@ local function UpdatePrediction(bola)
 
     local vel = bola.AssemblyLinearVelocity
     local speed = vel.Magnitude
-    -- So mostra se a bola estiver em movimento relevante
+    -- Só mostra se a bola estiver em movimento relevante
     if speed < 8 then
         ClearPrediction()
         return
@@ -876,11 +820,11 @@ local function UpdatePrediction(bola)
         predFolder.Parent = workspace
     end
 
-    -- Simula trajetoria
+    -- Simula trajetória
     local points = {}
     local pos = bola.Position
     local v = vel
-    local groundY = bola.Position.Y - 2 -- aproximacao; ajusta no primeiro hit
+    local groundY = bola.Position.Y - 2 -- aproximação; ajusta no primeiro hit
 
     for i = 1, PRED_STEPS do
         v = v + PRED_GRAVITY * PRED_DT
@@ -888,7 +832,7 @@ local function UpdatePrediction(bola)
         v = v * (1 - 0.012 * PRED_DT * 60)
         pos = pos + v * PRED_DT
 
-        -- Para se "bater no chao"
+        -- Para se “bater no chão”
         if pos.Y <= (bola.Position.Y - 15) and v.Y < 0 then
             table.insert(points, Vector3.new(pos.X, bola.Position.Y - 1, pos.Z))
             break
@@ -972,7 +916,7 @@ local function AllyName(plr)
 end
 
 local function GetPlayerRoot(plr)
-    -- Alvo especial: robo de teste
+    -- Alvo especial: robô de teste
     if plr == "TEST_BOT" or (type(plr) == "string" and plr:lower():find("robo")) then
         if TestBotRoot and TestBotRoot.Parent then return TestBotRoot end
         return nil
@@ -999,7 +943,7 @@ end
 local function SpawnTestBot()
     DestroyTestBot()
     if not RootPart then
-        Notify("Personagem nao carregou", "warn")
+        Notify("Personagem não carregou", "warn")
         return
     end
 
@@ -1062,7 +1006,7 @@ local function SpawnTestBot()
 
     TestBotModel = model
     TestBotRoot = root
-    Notify("Robo spawnado: robo kkkkkk", "ok")
+    Notify("Robô spawnado: robo kkkkkk", "ok")
 end
 
 local function IsSameTeam(plr)
@@ -1075,21 +1019,21 @@ local function IsSameTeam(plr)
     if LocalPlayer.TeamColor and plr.TeamColor and LocalPlayer.TeamColor == plr.TeamColor then
         return true
     end
-    -- Sem times definidos: trata todos os outros como possiveis aliados
+    -- Sem times definidos: trata todos os outros como possíveis aliados
     if not LocalPlayer.Team and not LocalPlayer.TeamColor then
         return true
     end
     return false
 end
 
--- Nick parcial: "dvv" encontra "dvvi9p" se for o unico match
--- Tambem reconhece o robo de teste "robo kkkkkk"
+-- Nick parcial: "dvv" encontra "dvvi9p" se for o único match
+-- Também reconhece o robô de teste "robo kkkkkk"
 local function FindAllyByPartialNick(partial)
     if not partial or partial == "" then return nil, "vazio" end
     local q = partial:lower()
     local matches = {}
 
-    -- Robo de teste
+    -- Robô de teste
     if TestBotRoot and TestBotRoot.Parent then
         local botName = "robo kkkkkk"
         if botName:sub(1, #q) == q or botName:find(q, 1, true) then
@@ -1129,7 +1073,7 @@ local function ScoreAllyFreedom(plr, ballPos)
     local distBall = (pos - ballPos).Magnitude
     if distBall < 4 or distBall > 120 then return -math.huge end
 
-    -- Distancia do inimigo mais proximo (maior = mais livre)
+    -- Distância do inimigo mais próximo (maior = mais livre)
     local nearestEnemy = math.huge
     for _, other in ipairs(Players:GetPlayers()) do
         if other ~= LocalPlayer and other ~= plr and not IsSameTeam(other) then
@@ -1142,7 +1086,7 @@ local function ScoreAllyFreedom(plr, ballPos)
     end
     if nearestEnemy == math.huge then nearestEnemy = 50 end
 
-    -- Preferencia: longe de inimigos, distancia media da bola
+    -- Preferência: longe de inimigos, distância média da bola
     local distScore = 1 - math.abs(distBall - 25) / 50
     return nearestEnemy * 2 + distScore * 15
 end
@@ -1153,7 +1097,7 @@ local function GetBestAlly(ballPos)
         local plr, status = FindAllyByPartialNick(PassNickFilter)
         if plr then return plr end
         if status == "multiplos" then return nil end
-        -- se nenhum match, cai no automatico
+        -- se nenhum match, cai no automático
     end
 
     local best, bestScore = nil, -math.huge
@@ -1204,7 +1148,7 @@ local function FinalizarPasse(motivo)
     PassGuiaAtivo = false
     PassChegou = false
     PassContandoParada = 0
-    -- Mantem PassTargetPlayer se tinha nick travado; so limpa se era automatico
+    -- Mantém PassTargetPlayer se tinha nick travado; só limpa se era automático
     if not PassNickFilter or PassNickFilter == "" then
         PassTargetPlayer = nil
     end
@@ -1234,7 +1178,7 @@ local function GuiarPasse(bola, dt)
     local dist = distVec.Magnitude
     local velH = Vector3.new(vel.X, 0, vel.Z)
 
-    -- ===== CHEGADA (igual logica do chute) =====
+    -- ===== CHEGADA (igual lógica do chute) =====
     if PassChegou or dist <= PASS_RAIO_CHEGADA then
         PassChegou = true
         local novoVel = bola.AssemblyLinearVelocity * freioPosGol
@@ -1268,7 +1212,7 @@ local function GuiarPasse(bola, dt)
         return
     end
 
-    -- ===== CURVA + VELOCIDADE LEGITIMA DO PASSE =====
+    -- ===== CURVA DO PASSE + velocidade legitima (v14) =====
     local alvoVel = velPasseCapturada > 0 and velPasseCapturada or (VEL_MINIMA * 0.85)
     if dist < 25 then
         alvoVel = alvoVel * (0.80 + 0.20 * math.clamp(dist / 25, 0, 1))
@@ -1277,8 +1221,8 @@ local function GuiarPasse(bola, dt)
     if velPasseCapturada > 0 then
         novaMag = math.min(novaMag, velPasseCapturada * 1.05)
     end
-
     local dirAtual = velH.Magnitude > 1 and velH.Unit or distVec.Unit
+
     local alinhamento = dirAtual:Dot(distVec.Unit)
     local desalinhado = 1 - math.max(alinhamento, -1)
     local fator = (CORRECAO_ALINHADO + desalinhado * CORRECAO_DESALINHADO) * PASS_FORCA_CURVA
@@ -1323,7 +1267,7 @@ local function DesativarScriptCompleto()
     ClearAllEsp()
     ClearPrediction()
 
-    -- Desconecta todas as conexoes
+    -- Desconecta todas as conexões
     for _, conn in ipairs(connections) do
         pcall(function() conn:Disconnect() end)
     end
@@ -1337,7 +1281,7 @@ local function DesativarScriptCompleto()
     Notify("Script desativado", "warn")
 end
 
--- Flag de deteccao da bola
+-- Flag de detecção da bola
 local bolaJaDetectada = false
 
 local function AplicarAntiLagConfig()
@@ -1350,19 +1294,18 @@ local function AplicarAntiLagConfig()
     elseif AntiLagMode == "quality" then
         antiLagSkip = 1
     else
-        antiLagSkip = 2 -- balanced
+        antiLagSkip = 2
     end
 end
 AplicarAntiLagConfig()
 
--- Loop do guia da bola + Reach (Heartbeat) com Anti-Lag
+-- Loop do guia da bola + Reach (Heartbeat) + Anti-Lag leve
 table.insert(connections, RunService.Heartbeat:Connect(function(dt)
     if not RootPart or not RootPart.Parent then return end
     antiLagCounter = antiLagCounter + 1
 
-    -- Busca de bola: cacheada no anti-lag (nao todo frame)
-    local agora = _now()
     local bola
+    local agora = tick()
     if AntiLagEnabled and (agora - lastBallSearch) < 0.05 then
         bola = cachedBola
         if bola and not bola.Parent then bola = nil cachedBola = nil end
@@ -1377,23 +1320,19 @@ table.insert(connections, RunService.Heartbeat:Connect(function(dt)
         Notify("BOLA DETECTADA: " .. tostring(bola.Name), "ok")
     elseif not bola and bolaJaDetectada then
         bolaJaDetectada = false
-        Notify("Bola perdida - aguardando...", "warn")
+        Notify("Bola perdida — aguardando...", "warn")
     end
 
-    -- Guia chute/passe: SEMPRE (precisao)
     if estadoSistema.ativo and estadoSistema.alvoAtual and bola then
         GuiarBola(bola, estadoSistema.alvoAtual, dt)
     end
     if PassEnabled and bola then
         GuiarPasse(bola, dt)
     end
-
-    -- Reach: a cada frame se ligado (gameplay)
     if ReachEnabled then
         DoReach()
     end
 
-    -- Visuais pesados: com skip no anti-lag
     local doHeavy = (not AntiLagEnabled) or (antiLagCounter % antiLagSkip == 0)
     if doHeavy then
         UpdateReachVisualizer()
@@ -1402,10 +1341,9 @@ table.insert(connections, RunService.Heartbeat:Connect(function(dt)
     end
 end))
 
--- Loop do Auto Follow + Skill Mode (Heartbeat = mais compativel com executors)
-table.insert(connections, RunService.Heartbeat:Connect(function(dt)
+-- Loop do Auto Follow + Skill Mode (PreRender)
+table.insert(connections, RunService.PreRender:Connect(function(dt)
     if not RootPart or not RootPart.Parent then return end
-    if not AutoFollowEnabled and not SkillModeEnabled then return end
     local ball = GetValidBallForFollow()
     DoAutoFollow(ball)
     DoSkillMode(dt)
@@ -1514,13 +1452,14 @@ Notify = function(msg, kind)
     lbl.TextSize = 11
     lbl.Font = Enum.Font.GothamBold
     lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextTruncate = Enum.TextTruncate.AtEnd
     lbl.ZIndex = 202
     lbl.Parent = toast
 
     -- Entra de cima
     toast.Position = UDim2.new(0, 0, 0, -10)
-    _spawn(function()
-        _wait(2.4)
+    task.spawn(function()
+        task.wait(2.4)
         if toast and toast.Parent then
             toast:Destroy()
         end
@@ -1529,8 +1468,8 @@ Notify = function(msg, kind)
     print("[dzxzxzx] " .. tostring(msg))
 end
 
--- ===== BOTOES FLUTUANTES (todos arrastaveis) =====
--- Botao abrir menu COM IMAGEM
+-- ===== BOTÕES FLUTUANTES (todos arrastáveis) =====
+-- Botão abrir menu COM IMAGEM
 local btnMaster = Instance.new("ImageButton")
 btnMaster.Name = "BtnMaster"
 btnMaster.Size = UDim2.new(0, 54, 0, 54)
@@ -1583,7 +1522,7 @@ strokeFollow.Color = Color3.fromRGB(160, 160, 160)
 strokeFollow.Thickness = 1.5
 MakeDraggable(btnFloatFollow)
 
--- Botao Flutuante Skill Mode
+-- Botão Flutuante Skill Mode
 local btnFloatSkill = Instance.new("TextButton")
 btnFloatSkill.Name = "BtnFloatSkill"
 btnFloatSkill.Size = UDim2.new(0, 54, 0, 54)
@@ -1602,7 +1541,7 @@ strokeSkill.Color = Color3.fromRGB(160, 160, 160)
 strokeSkill.Thickness = 1.5
 MakeDraggable(btnFloatSkill)
 
--- Botao Flutuante Reach
+-- Botão Flutuante Reach
 local btnFloatReach = Instance.new("TextButton")
 btnFloatReach.Name = "BtnFloatReach"
 btnFloatReach.Size = UDim2.new(0, 54, 0, 54)
@@ -1621,7 +1560,7 @@ strokeReach.Color = Color3.fromRGB(160, 160, 160)
 strokeReach.Thickness = 1.5
 MakeDraggable(btnFloatReach)
 
--- Botao Flutuante Passe Inteligente
+-- Botão Flutuante Passe Inteligente
 local btnFloatPass = Instance.new("TextButton")
 btnFloatPass.Name = "BtnFloatPass"
 btnFloatPass.Size = UDim2.new(0, 54, 0, 54)
@@ -1640,14 +1579,14 @@ strokePass.Color = Color3.fromRGB(160, 160, 160)
 strokePass.Thickness = 1.5
 MakeDraggable(btnFloatPass)
 
--- Botao troca rapida de angulo (esquerdo SWAP direito)
+-- Botao troca angulo (v14)
 local btnFloatSwap = Instance.new("TextButton")
 btnFloatSwap.Name = "BtnFloatSwap"
 btnFloatSwap.Size = UDim2.new(0, 54, 0, 54)
 btnFloatSwap.Position = UDim2.new(0, 78, 0.42, 0)
 btnFloatSwap.BackgroundColor3 = COR_PRETO
 btnFloatSwap.Text = "SWAP"
-btnFloatSwap.TextSize = 22
+btnFloatSwap.TextSize = 14
 btnFloatSwap.Font = Enum.Font.GothamBold
 btnFloatSwap.TextColor3 = COR_TEXTO
 btnFloatSwap.BorderSizePixel = 0
@@ -1689,7 +1628,7 @@ panelBg.ZIndex = 0
 panelBg.Parent = panel
 Instance.new("UICorner", panelBg).CornerRadius = UDim.new(0, 12)
 
--- Overlay escuro pra texto continuar legivel
+-- Overlay escuro pra texto continuar legível
 local panelOverlay = Instance.new("Frame")
 panelOverlay.Name = "PanelOverlay"
 panelOverlay.Size = UDim2.new(1, 0, 1, 0)
@@ -1700,12 +1639,12 @@ panelOverlay.ZIndex = 1
 panelOverlay.Parent = panel
 Instance.new("UICorner", panelOverlay).CornerRadius = UDim.new(0, 12)
 
--- Header (arrastavel)
+-- Header (arrastável)
 local header = Instance.new("TextButton")
 header.Name = "Header"
 header.Size = UDim2.new(1, 0, 0, 36)
 header.BackgroundColor3 = COR_VERMELHO
-header.Text = "dzxzxzx HUB v13.1 - PRIVADO"
+header.Text = "dzxzxzx HUB v13.1  •  PRIVADO"
 header.TextSize = 12
 header.Font = Enum.Font.GothamBold
 header.TextColor3 = COR_TEXTO_ESCURO
@@ -1735,7 +1674,7 @@ content.Size = UDim2.new(1, -4, 0, 520)
 content.BackgroundTransparency = 1
 content.Parent = scroll
 
--- ===== CONTEUDO =====
+-- ===== CONTEÚDO =====
 local y = 4
 
 -- Toggle Sistema
@@ -1743,7 +1682,7 @@ local btnToggleSystem = Instance.new("TextButton")
 btnToggleSystem.Size = UDim2.new(1, -8, 0, 34)
 btnToggleSystem.Position = UDim2.new(0, 4, 0, y)
 btnToggleSystem.BackgroundColor3 = COR_PRETO
-btnToggleSystem.Text = "SISTEMA DESLIGADO"
+btnToggleSystem.Text = "⊘ SISTEMA DESLIGADO"
 btnToggleSystem.TextSize = 12
 btnToggleSystem.Font = Enum.Font.GothamBold
 btnToggleSystem.TextColor3 = COR_TEXTO
@@ -1760,14 +1699,14 @@ local function AtualizarVisualSistema()
         btnFloatToggle.Text = "ON"
         btnFloatToggle.TextColor3 = COR_TEXTO_ESCURO
         btnToggleSystem.BackgroundColor3 = COR_VERMELHO
-        btnToggleSystem.Text = " SISTEMA LIGADO"
+        btnToggleSystem.Text = "🎯 SISTEMA LIGADO"
         btnToggleSystem.TextColor3 = COR_TEXTO_ESCURO
     else
         btnFloatToggle.BackgroundColor3 = COR_PRETO
         btnFloatToggle.Text = "OFF"
         btnFloatToggle.TextColor3 = COR_TEXTO
         btnToggleSystem.BackgroundColor3 = COR_PRETO
-        btnToggleSystem.Text = "SISTEMA DESLIGADO"
+        btnToggleSystem.Text = "⊘ SISTEMA DESLIGADO"
         btnToggleSystem.TextColor3 = COR_TEXTO
     end
 end
@@ -1787,7 +1726,7 @@ end
 btnFloatToggle.MouseButton1Click:Connect(ToggleSistema)
 btnToggleSystem.MouseButton1Click:Connect(ToggleSistema)
 
--- Label selecao
+-- Label seleção
 local lblSelecao = Instance.new("TextLabel")
 lblSelecao.Text = "Nenhuma coordenada selecionada"
 lblSelecao.TextSize = 11
@@ -1817,7 +1756,7 @@ Instance.new("UICorner", textbox).CornerRadius = UDim.new(0, 6)
 Instance.new("UIStroke", textbox).Color = COR_VERMELHO
 y = y + 36
 
--- Botoes salvar / limpar
+-- Botões salvar / limpar
 local btnSave = Instance.new("TextButton")
 btnSave.Size = UDim2.new(0.55, -6, 0, 30)
 btnSave.Position = UDim2.new(0, 4, 0, y)
@@ -1862,7 +1801,7 @@ end)
 
 -- ===== CONTROLES DE CURVA =====
 local lblCurva = Instance.new("TextLabel")
-lblCurva.Text = "FORCA DA CURVA: " .. string.format("%.2f", FORCA_CURVA)
+lblCurva.Text = "FORÇA DA CURVA: " .. string.format("%.2f", FORCA_CURVA)
 lblCurva.TextSize = 11
 lblCurva.Font = Enum.Font.GothamSemibold
 lblCurva.TextColor3 = COR_TEXTO
@@ -1877,7 +1816,7 @@ local btnCurvaMenos = Instance.new("TextButton")
 btnCurvaMenos.Size = UDim2.new(0, 40, 0, 28)
 btnCurvaMenos.Position = UDim2.new(0, 4, 0, y)
 btnCurvaMenos.BackgroundColor3 = COR_PRETO
-btnCurvaMenos.Text = "-"
+btnCurvaMenos.Text = "−"
 btnCurvaMenos.TextSize = 18
 btnCurvaMenos.Font = Enum.Font.GothamBold
 btnCurvaMenos.TextColor3 = COR_VERMELHO
@@ -1900,15 +1839,15 @@ y = y + 36
 
 btnCurvaMenos.MouseButton1Click:Connect(function()
     FORCA_CURVA = math.clamp(FORCA_CURVA - 0.05, 0.30, 1.20)
-    lblCurva.Text = "FORCA DA CURVA: " .. string.format("%.2f", FORCA_CURVA)
+    lblCurva.Text = "FORÇA DA CURVA: " .. string.format("%.2f", FORCA_CURVA)
 end)
 btnCurvaMais.MouseButton1Click:Connect(function()
     FORCA_CURVA = math.clamp(FORCA_CURVA + 0.05, 0.30, 1.20)
-    lblCurva.Text = "FORCA DA CURVA: " .. string.format("%.2f", FORCA_CURVA)
+    lblCurva.Text = "FORÇA DA CURVA: " .. string.format("%.2f", FORCA_CURVA)
 end)
 
 local lblDist = Instance.new("TextLabel")
-lblDist.Text = "INICIO DA CURVA: " .. DIST_INICIO_CURVA .. " studs"
+lblDist.Text = "INÍCIO DA CURVA: " .. DIST_INICIO_CURVA .. " studs"
 lblDist.TextSize = 11
 lblDist.Font = Enum.Font.GothamSemibold
 lblDist.TextColor3 = COR_TEXTO
@@ -1923,7 +1862,7 @@ local btnDistMenos = Instance.new("TextButton")
 btnDistMenos.Size = UDim2.new(0, 40, 0, 28)
 btnDistMenos.Position = UDim2.new(0, 4, 0, y)
 btnDistMenos.BackgroundColor3 = COR_PRETO
-btnDistMenos.Text = "-"
+btnDistMenos.Text = "−"
 btnDistMenos.TextSize = 18
 btnDistMenos.Font = Enum.Font.GothamBold
 btnDistMenos.TextColor3 = COR_VERMELHO
@@ -1946,11 +1885,11 @@ y = y + 40
 
 btnDistMenos.MouseButton1Click:Connect(function()
     DIST_INICIO_CURVA = math.clamp(DIST_INICIO_CURVA - 4, 20, 90)
-    lblDist.Text = "INICIO DA CURVA: " .. DIST_INICIO_CURVA .. " studs"
+    lblDist.Text = "INÍCIO DA CURVA: " .. DIST_INICIO_CURVA .. " studs"
 end)
 btnDistMais.MouseButton1Click:Connect(function()
     DIST_INICIO_CURVA = math.clamp(DIST_INICIO_CURVA + 4, 20, 90)
-    lblDist.Text = "INICIO DA CURVA: " .. DIST_INICIO_CURVA .. " studs"
+    lblDist.Text = "INÍCIO DA CURVA: " .. DIST_INICIO_CURVA .. " studs"
 end)
 
 -- Lista de coordenadas
@@ -1995,7 +1934,7 @@ function AtualizarLista()
     end
     local count = 0
     for nome, coords in pairs(coordenadas) do
-        count = count + 1
+        count += 1
         local container = Instance.new("Frame")
         container.Size = UDim2.new(1, -4, 0, 30)
         container.BackgroundTransparency = 1
@@ -2019,7 +1958,7 @@ function AtualizarLista()
             estadoSistema.coordenadaSelecionada = nome
             estadoSistema.guiaAtivo = false
             estadoSistema.cruzou = false
-            lblSelecao.Text = "OK " .. nome
+            lblSelecao.Text = "✓ " .. nome
             Notify("Alvo: " .. nome, "ok")
         end)
 
@@ -2027,7 +1966,7 @@ function AtualizarLista()
         btnDel.Size = UDim2.new(0, 30, 0, 30)
         btnDel.Position = UDim2.new(1, -30, 0, 0)
         btnDel.BackgroundColor3 = COR_VERMELHO
-        btnDel.Text = "X"
+        btnDel.Text = "✕"
         btnDel.TextSize = 13
         btnDel.Font = Enum.Font.GothamBold
         btnDel.TextColor3 = COR_TEXTO_ESCURO
@@ -2092,7 +2031,7 @@ local function ToggleSkill()
 end
 btnFloatSkill.MouseButton1Click:Connect(ToggleSkill)
 
--- Funcao para atualizar visibilidade dos botoes flutuantes
+-- Função para atualizar visibilidade dos botões flutuantes
 local function AtualizarVisibilidadeFloat()
     if StealthMode then
         btnMaster.Visible = false
@@ -2113,15 +2052,15 @@ local function AtualizarVisibilidadeFloat()
     btnFloatSwap.Visible = floatButtonsVisible.swap
 end
 
--- ================= MODO FURTIVO (Stealth UI) - PC + Mobile =================
--- Botao minimo para SAIR no mobile (quase invisivel, arrastavel)
+-- ================= MODO FURTIVO (Stealth UI) — PC + Mobile =================
+-- Botão mínimo para SAIR no mobile (quase invisível, arrastável)
 local btnExitStealth = Instance.new("TextButton")
 btnExitStealth.Name = "BtnExitStealth"
 btnExitStealth.Size = UDim2.new(0, 36, 0, 36)
 btnExitStealth.Position = UDim2.new(1, -46, 0, 10)
 btnExitStealth.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 btnExitStealth.BackgroundTransparency = 0.55
-btnExitStealth.Text = "o"
+btnExitStealth.Text = "👁"
 btnExitStealth.TextSize = 14
 btnExitStealth.Font = Enum.Font.GothamBold
 btnExitStealth.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -2191,7 +2130,7 @@ btnExitStealth.MouseButton1Click:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(input, gp)
-    -- Captura de nova tecla (keybind customizavel)
+    -- Captura de nova tecla (keybind customizável)
     if waitingKeybind and input.UserInputType == Enum.UserInputType.Keyboard then
         local key = input.KeyCode
         if key ~= Enum.KeyCode.Unknown then
@@ -2313,7 +2252,7 @@ local btnSkillMenos = Instance.new("TextButton")
 btnSkillMenos.Size = UDim2.new(0, 40, 0, 28)
 btnSkillMenos.Position = UDim2.new(0, 4, 0, extraY)
 btnSkillMenos.BackgroundColor3 = COR_PRETO
-btnSkillMenos.Text = "-"
+btnSkillMenos.Text = "−"
 btnSkillMenos.TextSize = 18
 btnSkillMenos.Font = Enum.Font.GothamBold
 btnSkillMenos.TextColor3 = COR_VERMELHO
@@ -2343,9 +2282,9 @@ btnSkillMais.MouseButton1Click:Connect(function()
     lblSkillSpeed.Text = "VELOCIDADE SKILL: " .. SkillSpeed
 end)
 
--- Visibilidade dos botoes flutuantes
+-- Visibilidade dos botões flutuantes
 local lblVis = Instance.new("TextLabel")
-lblVis.Text = "MOSTRAR / ESCONDER BOTOES"
+lblVis.Text = "MOSTRAR / ESCONDER BOTÕES"
 lblVis.TextSize = 11
 lblVis.Font = Enum.Font.GothamBold
 lblVis.TextColor3 = COR_VERMELHO
@@ -2361,7 +2300,7 @@ local function criarToggleVis(nome, chave, y)
     btn.Size = UDim2.new(1, -8, 0, 28)
     btn.Position = UDim2.new(0, 4, 0, y)
     btn.BackgroundColor3 = COR_PRETO
-    btn.Text = nome .. ": VISIVEL"
+    btn.Text = nome .. ": VISÍVEL"
     btn.TextSize = 11
     btn.Font = Enum.Font.Gotham
     btn.TextColor3 = COR_TEXTO
@@ -2374,25 +2313,25 @@ local function criarToggleVis(nome, chave, y)
     btn.MouseButton1Click:Connect(function()
         floatButtonsVisible[chave] = not floatButtonsVisible[chave]
         AtualizarVisibilidadeFloat()
-        btn.Text = nome .. (floatButtonsVisible[chave] and ": VISIVEL" or ": OCULTO")
+        btn.Text = nome .. (floatButtonsVisible[chave] and ": VISÍVEL" or ": OCULTO")
         btn.BackgroundColor3 = floatButtonsVisible[chave] and COR_PRETO or Color3.fromRGB(40, 20, 20)
     end)
     return btn
 end
 
-criarToggleVis("Botao Menu", "master", extraY)
+criarToggleVis("Botão ⚙ (Menu)", "master", extraY)
 extraY = extraY + 32
-criarToggleVis("Botao Sistema (ON/OFF)", "sistema", extraY)
+criarToggleVis("Botão Sistema (ON/OFF)", "sistema", extraY)
 extraY = extraY + 32
-criarToggleVis("Botao Follow (F)", "follow", extraY)
+criarToggleVis("Botão Follow (F)", "follow", extraY)
 extraY = extraY + 32
-criarToggleVis("Botao Skill (SK)", "skill", extraY)
+criarToggleVis("Botão Skill (SK)", "skill", extraY)
 extraY = extraY + 32
-criarToggleVis("Botao Reach (R)", "reach", extraY)
+criarToggleVis("Botão Reach (R)", "reach", extraY)
 extraY = extraY + 32
-criarToggleVis("Botao Passe (P)", "pass", extraY)
+criarToggleVis("Botão Passe (P)", "pass", extraY)
 extraY = extraY + 32
-criarToggleVis("Botao Troca Angulo (SWAP)", "swap", extraY)
+criarToggleVis("Botao SWAP angulo", "swap", extraY)
 extraY = extraY + 40
 
 -- ===== REACH CONTROLS =====
@@ -2446,7 +2385,7 @@ local btnReachMenos = Instance.new("TextButton")
 btnReachMenos.Size = UDim2.new(0, 40, 0, 28)
 btnReachMenos.Position = UDim2.new(0, 4, 0, extraY)
 btnReachMenos.BackgroundColor3 = COR_PRETO
-btnReachMenos.Text = "-"
+btnReachMenos.Text = "−"
 btnReachMenos.TextSize = 18
 btnReachMenos.Font = Enum.Font.GothamBold
 btnReachMenos.TextColor3 = COR_VERMELHO
@@ -2557,7 +2496,7 @@ local btnPred = Instance.new("TextButton")
 btnPred.Size = UDim2.new(1, -8, 0, 30)
 btnPred.Position = UDim2.new(0, 4, 0, extraY)
 btnPred.BackgroundColor3 = COR_VERMELHO
-btnPred.Text = "Trajetoria: ON"
+btnPred.Text = "Trajetória: ON"
 btnPred.TextSize = 12
 btnPred.Font = Enum.Font.GothamBold
 btnPred.TextColor3 = COR_TEXTO_ESCURO
@@ -2571,11 +2510,11 @@ extraY = extraY + 40
 btnPred.MouseButton1Click:Connect(function()
     PredictionEnabled = not PredictionEnabled
     if PredictionEnabled then
-        btnPred.Text = "Trajetoria: ON"
+        btnPred.Text = "Trajetória: ON"
         btnPred.BackgroundColor3 = COR_VERMELHO
         btnPred.TextColor3 = COR_TEXTO_ESCURO
     else
-        btnPred.Text = "Trajetoria: OFF"
+        btnPred.Text = "Trajetória: OFF"
         btnPred.BackgroundColor3 = COR_PRETO
         btnPred.TextColor3 = COR_TEXTO
         ClearPrediction()
@@ -2613,7 +2552,7 @@ Instance.new("UIStroke", passNickBox).Color = Color3.fromRGB(80, 80, 80)
 extraY = extraY + 34
 
 local lblPassTarget = Instance.new("TextLabel")
-lblPassTarget.Text = "Alvo: automatico (mais livre)"
+lblPassTarget.Text = "Alvo: automático (mais livre)"
 lblPassTarget.TextSize = 10
 lblPassTarget.Font = Enum.Font.Gotham
 lblPassTarget.TextColor3 = Color3.fromRGB(180, 180, 180)
@@ -2627,7 +2566,7 @@ extraY = extraY + 20
 local function RefreshPassTargetLabel()
     PassNickFilter = (passNickBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
     if PassNickFilter == "" then
-        lblPassTarget.Text = "Alvo: automatico (mais livre)"
+        lblPassTarget.Text = "Alvo: automático (mais livre)"
         return
     end
     local plr, status, matches = FindAllyByPartialNick(PassNickFilter)
@@ -2639,7 +2578,7 @@ local function RefreshPassTargetLabel()
         for i, m in ipairs(matches or {}) do
             if i <= 3 then table.insert(names, AllyName(m)) end
         end
-        lblPassTarget.Text = "Varios: " .. table.concat(names, ", ")
+        lblPassTarget.Text = "Vários: " .. table.concat(names, ", ")
         lblPassTarget.TextColor3 = Color3.fromRGB(255, 180, 40)
     else
         lblPassTarget.Text = "Nenhum jogador com \"" .. PassNickFilter .. "\""
@@ -2695,11 +2634,11 @@ local function TogglePass()
         if PassNickFilter ~= "" then
             local plr, status = FindAllyByPartialNick(PassNickFilter)
             if status == "nenhum" then
-                Notify("Nick nao encontrado", "warn")
+                Notify("Nick não encontrado", "warn")
                 return
             end
             if status == "multiplos" then
-                Notify("Varios nicks - seja mais especifico", "warn")
+                Notify("Vários nicks — seja mais específico", "warn")
                 return
             end
             PassTargetPlayer = plr
@@ -2728,7 +2667,7 @@ btnFloatPass.MouseButton1Click:Connect(TogglePass)
 
 -- Controles de curva do passe
 local lblPassCurva = Instance.new("TextLabel")
-lblPassCurva.Text = "FORCA CURVA PASSE: " .. string.format("%.2f", PASS_FORCA_CURVA)
+lblPassCurva.Text = "FORÇA CURVA PASSE: " .. string.format("%.2f", PASS_FORCA_CURVA)
 lblPassCurva.TextSize = 11
 lblPassCurva.Font = Enum.Font.GothamSemibold
 lblPassCurva.TextColor3 = COR_TEXTO
@@ -2743,7 +2682,7 @@ local btnPassCurvaM = Instance.new("TextButton")
 btnPassCurvaM.Size = UDim2.new(0, 40, 0, 26)
 btnPassCurvaM.Position = UDim2.new(0, 4, 0, extraY)
 btnPassCurvaM.BackgroundColor3 = COR_PRETO
-btnPassCurvaM.Text = "-"
+btnPassCurvaM.Text = "−"
 btnPassCurvaM.TextSize = 16
 btnPassCurvaM.Font = Enum.Font.GothamBold
 btnPassCurvaM.TextColor3 = COR_VERMELHO
@@ -2766,15 +2705,15 @@ extraY = extraY + 32
 
 btnPassCurvaM.MouseButton1Click:Connect(function()
     PASS_FORCA_CURVA = math.clamp(PASS_FORCA_CURVA - 0.05, 0.30, 1.20)
-    lblPassCurva.Text = "FORCA CURVA PASSE: " .. string.format("%.2f", PASS_FORCA_CURVA)
+    lblPassCurva.Text = "FORÇA CURVA PASSE: " .. string.format("%.2f", PASS_FORCA_CURVA)
 end)
 btnPassCurvaP.MouseButton1Click:Connect(function()
     PASS_FORCA_CURVA = math.clamp(PASS_FORCA_CURVA + 0.05, 0.30, 1.20)
-    lblPassCurva.Text = "FORCA CURVA PASSE: " .. string.format("%.2f", PASS_FORCA_CURVA)
+    lblPassCurva.Text = "FORÇA CURVA PASSE: " .. string.format("%.2f", PASS_FORCA_CURVA)
 end)
 
 local lblPassDist = Instance.new("TextLabel")
-lblPassDist.Text = "INICIO CURVA PASSE: " .. PASS_DIST_INICIO .. " studs"
+lblPassDist.Text = "INÍCIO CURVA PASSE: " .. PASS_DIST_INICIO .. " studs"
 lblPassDist.TextSize = 11
 lblPassDist.Font = Enum.Font.GothamSemibold
 lblPassDist.TextColor3 = COR_TEXTO
@@ -2789,7 +2728,7 @@ local btnPassDistM = Instance.new("TextButton")
 btnPassDistM.Size = UDim2.new(0, 40, 0, 26)
 btnPassDistM.Position = UDim2.new(0, 4, 0, extraY)
 btnPassDistM.BackgroundColor3 = COR_PRETO
-btnPassDistM.Text = "-"
+btnPassDistM.Text = "−"
 btnPassDistM.TextSize = 16
 btnPassDistM.Font = Enum.Font.GothamBold
 btnPassDistM.TextColor3 = COR_VERMELHO
@@ -2812,19 +2751,19 @@ extraY = extraY + 34
 
 btnPassDistM.MouseButton1Click:Connect(function()
     PASS_DIST_INICIO = math.clamp(PASS_DIST_INICIO - 2, 10, 80)
-    lblPassDist.Text = "INICIO CURVA PASSE: " .. PASS_DIST_INICIO .. " studs"
+    lblPassDist.Text = "INÍCIO CURVA PASSE: " .. PASS_DIST_INICIO .. " studs"
 end)
 btnPassDistP.MouseButton1Click:Connect(function()
     PASS_DIST_INICIO = math.clamp(PASS_DIST_INICIO + 2, 10, 80)
-    lblPassDist.Text = "INICIO CURVA PASSE: " .. PASS_DIST_INICIO .. " studs"
+    lblPassDist.Text = "INÍCIO CURVA PASSE: " .. PASS_DIST_INICIO .. " studs"
 end)
 
--- Spawn robo de teste
+-- Spawn robô de teste
 local btnSpawnBot = Instance.new("TextButton")
 btnSpawnBot.Size = UDim2.new(1, -8, 0, 28)
 btnSpawnBot.Position = UDim2.new(0, 4, 0, extraY)
 btnSpawnBot.BackgroundColor3 = COR_PRETO
-btnSpawnBot.Text = "BOT Spawn Robo Teste"
+btnSpawnBot.Text = "🤖 Spawn Robô Teste"
 btnSpawnBot.TextSize = 11
 btnSpawnBot.Font = Enum.Font.GothamBold
 btnSpawnBot.TextColor3 = COR_TEXTO
@@ -2847,7 +2786,7 @@ local btnRemoveBot = Instance.new("TextButton")
 btnRemoveBot.Size = UDim2.new(1, -8, 0, 28)
 btnRemoveBot.Position = UDim2.new(0, 4, 0, extraY)
 btnRemoveBot.BackgroundColor3 = COR_PRETO
-btnRemoveBot.Text = "Remover Robo"
+btnRemoveBot.Text = "Remover Robô"
 btnRemoveBot.TextSize = 11
 btnRemoveBot.Font = Enum.Font.Gotham
 btnRemoveBot.TextColor3 = COR_TEXTO
@@ -2859,11 +2798,11 @@ extraY = extraY + 40
 
 btnRemoveBot.MouseButton1Click:Connect(function()
     DestroyTestBot()
-    Notify("Robo removido", "info")
+    Notify("Robô removido", "info")
     RefreshPassTargetLabel()
 end)
 
--- ===== KEYBINDS CUSTOMIZAVEIS =====
+-- ===== KEYBINDS CUSTOMIZÁVEIS =====
 local lblKeys = Instance.new("TextLabel")
 lblKeys.Text = "TECLAS (KEYBINDS)"
 lblKeys.TextSize = 11
@@ -2896,7 +2835,7 @@ btnKeyFollow.MouseButton1Click:Connect(function()
     btnKeyFollow.Text = "Pressione uma tecla..."
     btnKeyFollow.BackgroundColor3 = COR_VERMELHO
     btnKeyFollow.TextColor3 = COR_TEXTO_ESCURO
-    _delay(5, function()
+    task.delay(5, function()
         if waitingKeybind == "follow" then
             waitingKeybind = nil
             btnKeyFollow.Text = "Tecla Follow: " .. KeyName(FOLLOW_KEY)
@@ -2926,7 +2865,7 @@ btnKeyStealth.MouseButton1Click:Connect(function()
     btnKeyStealth.Text = "Pressione uma tecla..."
     btnKeyStealth.BackgroundColor3 = COR_VERMELHO
     btnKeyStealth.TextColor3 = COR_TEXTO_ESCURO
-    _delay(5, function()
+    task.delay(5, function()
         if waitingKeybind == "stealth" then
             waitingKeybind = nil
             btnKeyStealth.Text = "Tecla Furtivo: " .. KeyName(STEALTH_KEY)
@@ -2936,7 +2875,7 @@ btnKeyStealth.MouseButton1Click:Connect(function()
     end)
 end)
 
--- ===== VELOCIDADE LEGITIMA =====
+-- ===== VELOCIDADE LEGITIMA (v14) =====
 local lblVel = Instance.new("TextLabel")
 lblVel.Text = "VELOCIDADE LEGITIMA"
 lblVel.TextSize = 11
@@ -2972,7 +2911,6 @@ btnVelCM.TextColor3 = COR_VERMELHO
 btnVelCM.BorderSizePixel = 0
 btnVelCM.Parent = content
 Instance.new("UICorner", btnVelCM).CornerRadius = UDim.new(0, 6)
-
 local btnVelCP = Instance.new("TextButton")
 btnVelCP.Size = UDim2.new(0, 40, 0, 26)
 btnVelCP.Position = UDim2.new(0, 50, 0, extraY)
@@ -2985,7 +2923,6 @@ btnVelCP.BorderSizePixel = 0
 btnVelCP.Parent = content
 Instance.new("UICorner", btnVelCP).CornerRadius = UDim.new(0, 6)
 extraY = extraY + 32
-
 btnVelCM.MouseButton1Click:Connect(function()
     VEL_MULT_CHUTE = math.clamp(VEL_MULT_CHUTE - 0.05, 0.70, 1.20)
     lblVelChute.Text = "MULT CHUTE: " .. string.format("%.2f", VEL_MULT_CHUTE)
@@ -3006,7 +2943,6 @@ lblVelPasse.Position = UDim2.new(0, 4, 0, extraY)
 lblVelPasse.TextXAlignment = Enum.TextXAlignment.Left
 lblVelPasse.Parent = content
 extraY = extraY + 18
-
 local btnVelPM = Instance.new("TextButton")
 btnVelPM.Size = UDim2.new(0, 40, 0, 26)
 btnVelPM.Position = UDim2.new(0, 4, 0, extraY)
@@ -3018,7 +2954,6 @@ btnVelPM.TextColor3 = COR_VERMELHO
 btnVelPM.BorderSizePixel = 0
 btnVelPM.Parent = content
 Instance.new("UICorner", btnVelPM).CornerRadius = UDim.new(0, 6)
-
 local btnVelPP = Instance.new("TextButton")
 btnVelPP.Size = UDim2.new(0, 40, 0, 26)
 btnVelPP.Position = UDim2.new(0, 50, 0, extraY)
@@ -3031,7 +2966,6 @@ btnVelPP.BorderSizePixel = 0
 btnVelPP.Parent = content
 Instance.new("UICorner", btnVelPP).CornerRadius = UDim.new(0, 6)
 extraY = extraY + 36
-
 btnVelPM.MouseButton1Click:Connect(function()
     VEL_MULT_PASSE = math.clamp(VEL_MULT_PASSE - 0.05, 0.70, 1.20)
     lblVelPasse.Text = "MULT PASSE: " .. string.format("%.2f", VEL_MULT_PASSE)
@@ -3041,7 +2975,7 @@ btnVelPP.MouseButton1Click:Connect(function()
     lblVelPasse.Text = "MULT PASSE: " .. string.format("%.2f", VEL_MULT_PASSE)
 end)
 
--- ===== ANTI-LAG =====
+-- ===== ANTI-LAG (v14) =====
 local lblAL = Instance.new("TextLabel")
 lblAL.Text = "ANTI-LAG"
 lblAL.TextSize = 11
@@ -3053,7 +2987,6 @@ lblAL.Position = UDim2.new(0, 4, 0, extraY)
 lblAL.TextXAlignment = Enum.TextXAlignment.Left
 lblAL.Parent = content
 extraY = extraY + 22
-
 local btnAL = Instance.new("TextButton")
 btnAL.Size = UDim2.new(1, -8, 0, 30)
 btnAL.Position = UDim2.new(0, 4, 0, extraY)
@@ -3066,9 +2999,7 @@ btnAL.BorderSizePixel = 0
 btnAL.Parent = content
 btnAL.AutoButtonColor = false
 Instance.new("UICorner", btnAL).CornerRadius = UDim.new(0, 6)
-Instance.new("UIStroke", btnAL).Color = COR_VERMELHO
 extraY = extraY + 36
-
 btnAL.MouseButton1Click:Connect(function()
     AntiLagEnabled = not AntiLagEnabled
     AplicarAntiLagConfig()
@@ -3084,7 +3015,6 @@ btnAL.MouseButton1Click:Connect(function()
         Notify("Anti-Lag OFF", "info")
     end
 end)
-
 local lblALMode = Instance.new("TextLabel")
 lblALMode.Text = "Modo: " .. AntiLagMode
 lblALMode.TextSize = 11
@@ -3096,7 +3026,6 @@ lblALMode.Position = UDim2.new(0, 4, 0, extraY)
 lblALMode.TextXAlignment = Enum.TextXAlignment.Left
 lblALMode.Parent = content
 extraY = extraY + 20
-
 local modes = {"quality", "balanced", "performance"}
 local modeIdx = 2
 local btnALMode = Instance.new("TextButton")
@@ -3112,7 +3041,6 @@ btnALMode.Parent = content
 btnALMode.AutoButtonColor = false
 Instance.new("UICorner", btnALMode).CornerRadius = UDim.new(0, 6)
 extraY = extraY + 40
-
 btnALMode.MouseButton1Click:Connect(function()
     modeIdx = (modeIdx % #modes) + 1
     AntiLagMode = modes[modeIdx]
@@ -3158,7 +3086,7 @@ local btnKill = Instance.new("TextButton")
 btnKill.Size = UDim2.new(1, -8, 0, 36)
 btnKill.Position = UDim2.new(0, 4, 0, extraY)
 btnKill.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
-btnKill.Text = "X DESATIVAR SCRIPT COMPLETO"
+btnKill.Text = "⛔ DESATIVAR SCRIPT COMPLETO"
 btnKill.TextSize = 12
 btnKill.Font = Enum.Font.GothamBold
 btnKill.TextColor3 = COR_TEXTO
@@ -3176,4 +3104,4 @@ end)
 scroll.CanvasSize = UDim2.new(0, 0, 0, extraY + 20)
 content.Size = UDim2.new(1, -4, 0, extraY + 20)
 
-Notify("HUB carregado - tudo pronto", "ok")
+Notify("HUB carregado — tudo pronto", "ok")
