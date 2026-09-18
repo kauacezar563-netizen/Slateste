@@ -1,4 +1,59 @@
-repeat task.wait() until game:IsLoaded()
+-- Compat Delta / todos executors
+local function _now()
+    local ok, t = pcall(function() return os.clock() end)
+    if ok and type(t) == "number" then return t end
+    ok, t = pcall(function() return tick() end)
+    if ok and type(t) == "number" then return t end
+    return 0
+end
+
+local function _wait(n)
+    n = tonumber(n) or 0
+    local ok, rs = pcall(function() return game:GetService("RunService") end)
+    if not ok or not rs then
+        local t0 = _now()
+        while (_now() - t0) < math.max(n, 0.03) do end
+        return
+    end
+    if n <= 0 then
+        rs.Heartbeat:Wait()
+        return
+    end
+    local t0 = _now()
+    while (_now() - t0) < n do
+        rs.Heartbeat:Wait()
+    end
+end
+
+local function _spawn(fn)
+    if type(fn) ~= "function" then return end
+    local co = coroutine.create(fn)
+    local ok, err = coroutine.resume(co)
+    if not ok then
+        warn("[dzxzxzx] spawn error:", err)
+    end
+end
+
+local function _delay(n, fn)
+    _spawn(function()
+        _wait(n)
+        if type(fn) == "function" then
+            fn()
+        end
+    end)
+end
+
+local function _defer(fn)
+    _spawn(fn)
+end
+
+pcall(function()
+    if game and game.IsLoaded and type(game.IsLoaded) == "function" and not game:IsLoaded() then
+        if game.Loaded then
+            game.Loaded:Wait()
+        end
+    end
+end)
 print("[dzxzxzx] Iniciando script...")
 
 local Players          = game:GetService("Players")
@@ -7,7 +62,7 @@ local UserInputService = game:GetService("UserInputService")
 
 
 local LocalPlayer = Players.LocalPlayer
-while not LocalPlayer do task.wait(0.5) LocalPlayer = Players.LocalPlayer end
+while not LocalPlayer do _wait(0.5) LocalPlayer = Players.LocalPlayer end
 
 -- Definido cedo (evita nil em hooks de tool / CharacterAdded)
 local connections = {}
@@ -114,7 +169,7 @@ local function HookPassTools(char)
             if not PassEnabled then return end
             PassToolTriggered = true
             -- janela curta para pegar a velocidade do passe
-            task.delay(1.2, function()
+            _delay(1.2, function()
                 PassToolTriggered = false
             end)
         end))
@@ -128,11 +183,11 @@ local function HookPassTools(char)
     end
 end
 
-task.defer(function()
+_defer(function()
     if LocalPlayer.Character then HookPassTools(LocalPlayer.Character) end
 end)
 LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.3)
+    _wait(0.3)
     HookPassTools(char)
 end)
 
@@ -469,8 +524,8 @@ local function GuiarBola(bola, posGoal, dt)
     bola.AssemblyLinearVelocity = Vector3.new(dirFinal.X * novaMag, velY, dirFinal.Z * novaMag)
     bola.AssemblyAngularVelocity = Vector3.zero
 
-    if os.clock() - cooldownToque > 0.15 then
-        cooldownToque = os.clock()
+    if _now() - cooldownToque > 0.15 then
+        cooldownToque = _now()
         TocarBola(bola)
     end
 end
@@ -1306,7 +1361,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function(dt)
     antiLagCounter = antiLagCounter + 1
 
     -- Busca de bola: cacheada no anti-lag (nao todo frame)
-    local agora = os.clock()
+    local agora = _now()
     local bola
     if AntiLagEnabled and (agora - lastBallSearch) < 0.05 then
         bola = cachedBola
@@ -1464,8 +1519,8 @@ Notify = function(msg, kind)
 
     -- Entra de cima
     toast.Position = UDim2.new(0, 0, 0, -10)
-    task.spawn(function()
-        task.wait(2.4)
+    _spawn(function()
+        _wait(2.4)
         if toast and toast.Parent then
             toast:Destroy()
         end
@@ -2841,7 +2896,7 @@ btnKeyFollow.MouseButton1Click:Connect(function()
     btnKeyFollow.Text = "Pressione uma tecla..."
     btnKeyFollow.BackgroundColor3 = COR_VERMELHO
     btnKeyFollow.TextColor3 = COR_TEXTO_ESCURO
-    task.delay(5, function()
+    _delay(5, function()
         if waitingKeybind == "follow" then
             waitingKeybind = nil
             btnKeyFollow.Text = "Tecla Follow: " .. KeyName(FOLLOW_KEY)
@@ -2871,7 +2926,7 @@ btnKeyStealth.MouseButton1Click:Connect(function()
     btnKeyStealth.Text = "Pressione uma tecla..."
     btnKeyStealth.BackgroundColor3 = COR_VERMELHO
     btnKeyStealth.TextColor3 = COR_TEXTO_ESCURO
-    task.delay(5, function()
+    _delay(5, function()
         if waitingKeybind == "stealth" then
             waitingKeybind = nil
             btnKeyStealth.Text = "Tecla Furtivo: " .. KeyName(STEALTH_KEY)
